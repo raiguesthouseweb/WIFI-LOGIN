@@ -48,10 +48,14 @@
                 
                 <form id="loginForm" action="{{ url_for('login') }}" method="post">
                     <div class="mb-3">
-                        <label for="mobile_number" class="form-label">Mobile Number</label>
+                        <label for="mobile_number" class="form-label">Mobile Number (with country code)</label>
                         <div class="input-group">
                             <span class="input-group-text"><i class="fas fa-mobile-alt"></i></span>
-                            <input type="text" class="form-control" id="mobile_number" name="mobile_number" required placeholder="Enter your mobile number">
+                            <input type="text" class="form-control" id="mobile_number" name="mobile_number" required placeholder="e.g., +911234567890">
+                        </div>
+                        <div class="form-text text-muted small">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Enter your mobile number with country code (e.g., +91 for India)
                         </div>
                     </div>
                     

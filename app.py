@@ -61,6 +61,11 @@ def login():
         flash('Please enter both mobile number and room number', 'danger')
         return redirect(url_for('index'))
     
+    # Validate mobile number format - should start with country code (+)
+    if not mobile_number.startswith('+'):
+        flash('Mobile number must include country code (e.g., +911234567890)', 'danger')
+        return redirect(url_for('index'))
+    
     # Validate against Google Sheets
     try:
         is_valid = verify_credentials(mobile_number, room_number)
@@ -91,7 +96,7 @@ def login():
                 logger.error(f"MikroTik error: {str(e)}")
                 flash('Error connecting to WiFi network', 'danger')
         else:
-            flash('Invalid mobile number or room number', 'danger')
+            flash('Invalid mobile number or room number. Please check both carefully.', 'danger')
     except Exception as e:
         logger.error(f"Validation error: {str(e)}")
         flash('Error validating credentials', 'danger')
