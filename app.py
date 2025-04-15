@@ -359,11 +359,28 @@ def api_refresh_sheet():
     API endpoint to refresh Google Sheet data
     """
     try:
-        get_credential_sheet(force_refresh=True)
-        return jsonify({"success": True})
+        # Attempt to refresh the sheet data
+        sheet_data = get_credential_sheet(force_refresh=True)
+        
+        # Check if we actually got data
+        if sheet_data and len(sheet_data) > 0:
+            return jsonify({
+                "success": True, 
+                "rows": len(sheet_data),
+                "message": f"Successfully refreshed Google Sheet with {len(sheet_data)} rows of data."
+            })
+        else:
+            return jsonify({
+                "success": False, 
+                "message": "Google Sheet was refreshed but no data was returned. Please check your sheet permissions and format."
+            })
     except Exception as e:
         logger.error(f"Error refreshing sheet: {str(e)}")
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({
+            "success": False, 
+            "error": str(e),
+            "message": "Failed to refresh Google Sheet data. Check credentials and permissions."
+        })
 
 @app.errorhandler(404)
 def page_not_found(e):

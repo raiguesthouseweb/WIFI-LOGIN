@@ -29,11 +29,18 @@ def _get_credentials():
         # If file doesn't exist, try environment variable
         creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         if creds_json:
-            creds_info = json.loads(creds_json)
-            return service_account.Credentials.from_service_account_info(
-                creds_info,
-                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
-            )
+            try:
+                # Try to parse the JSON
+                creds_info = json.loads(creds_json)
+                logger.info("Successfully parsed GOOGLE_CREDENTIALS_JSON environment variable")
+                return service_account.Credentials.from_service_account_info(
+                    creds_info,
+                    scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+                )
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing GOOGLE_CREDENTIALS_JSON: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error creating credentials from GOOGLE_CREDENTIALS_JSON: {str(e)}")
         
         # If neither exists, log error
         logger.error("No Google credentials found")
@@ -246,9 +253,15 @@ def verify_credentials(mobile_number, room_number):
         
         if not sheet_data:
             logger.warning("No sheet data available - cannot validate credentials")
-            # For development/testing, return True to allow login
-            # In production, you would return False here
-            return True
+            # In production environment, we should fail closed (return False)
+            # Only allow bypass in development with explicit environment flag
+            dev_mode = os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true'
+            if dev_mode:
+                logger.warning("DEVELOPMENT MODE: Bypassing Google Sheet validation")
+                return True
+            else:
+                logger.error("PRODUCTION MODE: Cannot validate without sheet data")
+                return False
         
         logger.info(f"Loaded {len(sheet_data)} rows from sheet for validation")
         
@@ -318,6 +331,12 @@ def verify_credentials(mobile_number, room_number):
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         
-        # In production environment, return False on errors
-        # For development/testing, allowing access for now
-        return True
+        # In production environment, we should fail closed (return False)
+        # Only allow bypass in development with explicit environment flag
+        dev_mode = os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true'
+        if dev_mode:
+            logger.warning("DEVELOPMENT MODE: Bypassing Google Sheet validation after error")
+            return True
+        else:
+            logger.error("PRODUCTION MODE: Validation failed due to error")
+            return False

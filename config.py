@@ -1,7 +1,7 @@
 import os
 
 # Google API
-GOOGLE_CREDENTIALS_FILE = os.environ.get('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
+GOOGLE_CREDENTIALS_FILE = os.environ.get('GOOGLE_CREDENTIALS_FILE', 'attached_assets/guestloginproject-8d27f814c0aa.json')
 SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID', '176lp2Z2usUXj7x3guMmTnMikoSqkXQrXw5jLfYguEq4')
 SHEET_NAME = os.environ.get('SHEET_NAME', 'Sheet1')
 
