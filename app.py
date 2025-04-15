@@ -65,10 +65,8 @@ def login():
         flash('Please enter both mobile number and room number', 'danger')
         return redirect(url_for('index'))
     
-    # Validate mobile number format - should start with country code (+)
-    if not mobile_number.startswith('+'):
-        flash('Mobile number must include country code (e.g., +911234567890)', 'danger')
-        return redirect(url_for('index'))
+    # No country code validation needed
+    # Mobile number validation is handled by Google Sheets
     
     # Check for blocked devices
     mac_address = session.get('mac')

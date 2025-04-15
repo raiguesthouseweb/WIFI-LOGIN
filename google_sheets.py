@@ -112,30 +112,61 @@ def normalize_room_number(room_number):
     Returns:
         Normalized room number string
     """
+    import re
+    
     if not room_number:
         return ""
     
-    # Convert to string, remove spaces, and convert to uppercase
-    normalized = str(room_number).strip().upper().replace(" ", "")
+    # Convert to string, strip, and convert to uppercase
+    normalized = str(room_number).strip().upper()
     
-    # Handle dormitory format: various formats like "1DORM", "1 DORM", "DORMITORY1", etc.
-    if "DORM" in normalized or "DORMITORY" in normalized:
-        # Extract the dormitory number
-        for num in range(1, 10):  # Assuming dormitory numbers 1-9
-            if str(num) in normalized:
-                return f"{num}DORM"
+    # Log original value for debugging
+    logger.debug(f"Normalizing room number: '{room_number}' -> initial '{normalized}'")
+    
+    # Handle dormitory format patterns
+    dorm_pattern = re.search(r'(\d+)\s*(?:DORM|DORMITORY)', normalized)
+    if dorm_pattern or "DORM" in normalized or "DORMITORY" in normalized:
+        # If we have a clear match with the regex
+        if dorm_pattern:
+            result = f"{dorm_pattern.group(1)}DORM"
+            logger.debug(f"Dormitory format detected: {normalized} -> {result}")
+            return result
         
-        # If no number found, return as is
+        # Otherwise try to extract just the number
+        for digit in re.findall(r'\d+', normalized):
+            result = f"{digit}DORM"
+            logger.debug(f"Extracted dormitory number: {normalized} -> {result}")
+            return result
+        
+        # If still no match, return as is
         return normalized
     
-    # Handle R0, R1, R2 format
-    if len(normalized) >= 2 and normalized[0] == 'R' and normalized[1:].isdigit():
-        return f"R{normalized[1:]}"
+    # Remove all spaces
+    normalized = normalized.replace(" ", "")
     
-    # Handle F1, F2, F3 format
-    if len(normalized) >= 2 and normalized[0] == 'F' and normalized[1:].isdigit():
-        return f"F{normalized[1:]}"
+    # Handle lowercase r prefix (e.g., "r0" -> "R0")
+    r_pattern = re.match(r'^[rR](\d+)$', normalized)
+    if r_pattern:
+        result = f"R{r_pattern.group(1)}"
+        logger.debug(f"Room format detected: {normalized} -> {result}")
+        return result
     
+    # Handle lowercase f prefix (e.g., "f1" -> "F1")
+    f_pattern = re.match(r'^[fF](\d+)$', normalized)
+    if f_pattern:
+        result = f"F{f_pattern.group(1)}"
+        logger.debug(f"Floor format detected: {normalized} -> {result}")
+        return result
+    
+    # If it's just a digit, assume it's a room number
+    if normalized.isdigit():
+        if len(normalized) == 1:
+            # Single digit is likely room number
+            result = f"R{normalized}"
+            logger.debug(f"Single digit treated as room: {normalized} -> {result}")
+            return result
+    
+    logger.debug(f"No special formatting applied, using: {normalized}")
     return normalized
 
 def verify_credentials(mobile_number, room_number):
@@ -152,34 +183,50 @@ def verify_credentials(mobile_number, room_number):
     try:
         sheet_data = get_credential_sheet()
         
+        # Strip the '+' if it was included in the mobile number
+        if mobile_number.startswith('+'):
+            mobile_number = mobile_number[1:]
+        
         # Normalize the provided room number
         normalized_input_room = normalize_room_number(room_number)
         
-        for row in sheet_data:
-            # Check if the row has at least 3 columns (Name, Mobile, Room)
-            if len(row) < 3:
-                continue
-            
-            sheet_mobile = str(row[1]).strip()  # Column B - Mobile Number
-            sheet_room = str(row[2]).strip()    # Column C - Room Number
-            
-            # Normalize the sheet room number
-            normalized_sheet_room = normalize_room_number(sheet_room)
-            
-            # Compare the provided credentials with the sheet data
-            if sheet_mobile == mobile_number and normalized_sheet_room == normalized_input_room:
-                logger.debug(f"Credentials verified for mobile: {mobile_number}")
-                return True
+        # Debug information for troubleshooting
+        logger.debug(f"Attempting to validate - Mobile: {mobile_number}, Room: {room_number} (Normalized: {normalized_input_room})")
+        logger.debug(f"Sheet data rows: {len(sheet_data) if sheet_data else 0}")
         
-        logger.debug(f"Invalid credentials for mobile: {mobile_number}")
-        
-        # Temporary: If no Google Sheets validation is available, allow login with any credentials
-        # This is for development/testing until Google credentials are properly set up
-        logger.warning("No Google credentials available, allowing login without validation")
-        return True
+        if sheet_data:
+            for row in sheet_data:
+                # Check if the row has at least 3 columns (Name, Mobile, Room)
+                if len(row) < 3:
+                    continue
+                
+                sheet_mobile = str(row[1]).strip()  # Column B - Mobile Number
+                sheet_room = str(row[2]).strip()    # Column C - Room Number
+                
+                # Strip the '+' if it exists in sheet data
+                if sheet_mobile.startswith('+'):
+                    sheet_mobile = sheet_mobile[1:]
+                
+                # Normalize the sheet room number
+                normalized_sheet_room = normalize_room_number(sheet_room)
+                
+                # Debug info
+                logger.debug(f"Comparing with - Sheet Mobile: {sheet_mobile}, Sheet Room: {sheet_room} (Normalized: {normalized_sheet_room})")
+                
+                # Compare the provided credentials with the sheet data
+                if sheet_mobile == mobile_number and normalized_sheet_room == normalized_input_room:
+                    logger.info(f"Credentials verified for mobile: {mobile_number}")
+                    return True
+            
+            logger.warning(f"Invalid credentials for mobile: {mobile_number}, room: {room_number}")
+            return False
+        else:
+            # If sheet_data is None or empty, log warning and allow login for testing
+            logger.warning("No Google Sheet data available, allowing login without validation")
+            return True
     
     except Exception as e:
         logger.error(f"Error verifying credentials: {str(e)}")
-        # Temporary: If error occurs during validation, allow login with any credentials
-        logger.warning("Error during validation, allowing login without validation")
+        # In production, you would want to deny access when verification fails
+        # But for development/testing, we'll allow access
         return True
