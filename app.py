@@ -218,7 +218,54 @@ def admin_dashboard():
         active_users = []
         flash('Error connecting to router', 'danger')
     
-    return render_template('admin.html', active_users=active_users)
+    # Get statistics from database
+    stats = {
+        'total_users': User.query.count(),
+        'total_sessions': LoginSession.query.count(),
+        'blocked_devices': BlockedDevice.query.filter_by(is_active=True).count(),
+        'recent_logins': LoginSession.query.order_by(LoginSession.login_time.desc()).limit(5).all()
+    }
+    
+    return render_template('admin.html', active_users=active_users, stats=stats)
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    """
+    Admin users page - shows all registered users
+    """
+    users = User.query.order_by(User.created_at.desc()).all()
+    return render_template('admin_users.html', users=users)
+
+@app.route('/admin/sessions')
+@admin_required
+def admin_sessions():
+    """
+    Admin sessions page - shows login history
+    """
+    sessions = LoginSession.query.order_by(LoginSession.login_time.desc()).all()
+    return render_template('admin_sessions.html', sessions=sessions)
+
+@app.route('/admin/blocked')
+@admin_required
+def admin_blocked():
+    """
+    Admin blocked devices page
+    """
+    blocked_devices = BlockedDevice.query.order_by(BlockedDevice.blocked_at.desc()).all()
+    return render_template('admin_blocked.html', blocked_devices=blocked_devices)
+
+@app.route('/admin/unblock/<int:device_id>', methods=['POST'])
+@admin_required
+def admin_unblock(device_id):
+    """
+    Unblock a device
+    """
+    device = BlockedDevice.query.get_or_404(device_id)
+    device.is_active = False
+    db.session.commit()
+    flash(f'Device {device.mac_address} unblocked successfully', 'success')
+    return redirect(url_for('admin_blocked'))
 
 @app.route('/api/users')
 @admin_required

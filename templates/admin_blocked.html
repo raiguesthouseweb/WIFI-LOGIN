@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin - Blocked Devices{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-8">
+            <h2><i class="fas fa-ban me-2"></i>Blocked Devices</h2>
+            <p class="text-muted">Manage blocked MAC addresses</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                </a>
+                <a href="{{ url_for('admin_users') }}" class="btn btn-outline-info">
+                    <i class="fas fa-users me-1"></i> Users
+                </a>
+                <a href="{{ url_for('admin_sessions') }}" class="btn btn-outline-info">
+                    <i class="fas fa-history me-1"></i> Sessions
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Blocked Devices Table -->
+    <div class="card mb-4">
+        <div class="card-header animated-bg text-white">
+            <h4 class="mb-0"><i class="fas fa-ban me-2"></i>Blocked Devices ({{ blocked_devices|length }})</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>MAC Address</th>
+                            <th>Mobile Number</th>
+                            <th>Reason</th>
+                            <th>Blocked At</th>
+                            <th>Blocked By</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if blocked_devices %}
+                            {% for device in blocked_devices %}
+                                <tr>
+                                    <td>{{ device.id }}</td>
+                                    <td>{{ device.mac_address }}</td>
+                                    <td>{{ device.mobile_number or 'N/A' }}</td>
+                                    <td>{{ device.reason or 'N/A' }}</td>
+                                    <td>{{ device.blocked_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ device.blocked_by or 'System' }}</td>
+                                    <td>
+                                        {% if device.is_active %}
+                                            <span class="badge bg-danger">Blocked</span>
+                                        {% else %}
+                                            <span class="badge bg-success">Unblocked</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if device.is_active %}
+                                            <form action="{{ url_for('admin_unblock', device_id=device.id) }}" method="post" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-success">
+                                                    <i class="fas fa-unlock me-1"></i>Unblock
+                                                </button>
+                                            </form>
+                                        {% else %}
+                                            <span class="text-muted">Already unblocked</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <i class="fas fa-ban fa-2x mb-2 text-muted"></i>
+                                    <p class="mb-0">No blocked devices in the database</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

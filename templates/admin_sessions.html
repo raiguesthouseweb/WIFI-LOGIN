@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin - Login Sessions{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-8">
+            <h2><i class="fas fa-history me-2"></i>Login Sessions</h2>
+            <p class="text-muted">User login history</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                </a>
+                <a href="{{ url_for('admin_users') }}" class="btn btn-outline-info">
+                    <i class="fas fa-users me-1"></i> Users
+                </a>
+                <a href="{{ url_for('admin_blocked') }}" class="btn btn-outline-danger">
+                    <i class="fas fa-ban me-1"></i> Blocked
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sessions Table -->
+    <div class="card mb-4">
+        <div class="card-header animated-bg text-white">
+            <h4 class="mb-0"><i class="fas fa-history me-2"></i>Login Sessions ({{ sessions|length }})</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>IP Address</th>
+                            <th>MAC Address</th>
+                            <th>Login Time</th>
+                            <th>Logout Time</th>
+                            <th>Duration</th>
+                            <th>Data Usage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if sessions %}
+                            {% for session in sessions %}
+                                <tr>
+                                    <td>{{ session.id }}</td>
+                                    <td>{{ session.user.mobile_number }}</td>
+                                    <td>{{ session.ip_address or 'N/A' }}</td>
+                                    <td>{{ session.mac_address or 'N/A' }}</td>
+                                    <td>{{ session.login_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>
+                                        {% if session.logout_time %}
+                                            {{ session.logout_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                                        {% else %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if session.logout_time %}
+                                            {% set duration = (session.logout_time - session.login_time).total_seconds() %}
+                                            {% if duration < 60 %}
+                                                {{ duration|round|int }} seconds
+                                            {% elif duration < 3600 %}
+                                                {{ (duration / 60)|round|int }} minutes
+                                            {% else %}
+                                                {{ (duration / 3600)|round(1) }} hours
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-primary">In progress</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div>
+                                            <i class="fas fa-arrow-down text-success me-1"></i>{{ (session.bytes_in|int / 1024 / 1024)|round(2) }} MB
+                                        </div>
+                                        <div>
+                                            <i class="fas fa-arrow-up text-danger me-1"></i>{{ (session.bytes_out|int / 1024 / 1024)|round(2) }} MB
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4">
+                                    <i class="fas fa-history fa-2x mb-2 text-muted"></i>
+                                    <p class="mb-0">No login sessions in the database</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

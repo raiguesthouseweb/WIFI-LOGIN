@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin - Registered Users{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-8">
+            <h2><i class="fas fa-users me-2"></i>Registered Users</h2>
+            <p class="text-muted">All users in the database</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                </a>
+                <a href="{{ url_for('admin_sessions') }}" class="btn btn-outline-info">
+                    <i class="fas fa-history me-1"></i> Sessions
+                </a>
+                <a href="{{ url_for('admin_blocked') }}" class="btn btn-outline-danger">
+                    <i class="fas fa-ban me-1"></i> Blocked
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Table -->
+    <div class="card mb-4">
+        <div class="card-header animated-bg text-white">
+            <h4 class="mb-0"><i class="fas fa-users me-2"></i>Registered Users ({{ users|length }})</h4>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Mobile Number</th>
+                            <th>Room Number</th>
+                            <th>First Registered</th>
+                            <th>Last Updated</th>
+                            <th>Status</th>
+                            <th>Sessions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if users %}
+                            {% for user in users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.mobile_number }}</td>
+                                    <td>{{ user.room_number }}</td>
+                                    <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>{{ user.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>
+                                        {% if user.is_active %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ user.login_sessions|length }}</td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center py-4">
+                                    <i class="fas fa-users-slash fa-2x mb-2 text-muted"></i>
+                                    <p class="mb-0">No registered users in the database</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
