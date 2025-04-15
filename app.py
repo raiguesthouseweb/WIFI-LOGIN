@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from google_sheets import get_credential_sheet, verify_credentials
 from mikrotik import MikroTikAPI
@@ -10,9 +11,9 @@ import time
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize app
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", "default_secret_key_for_development")
+# Get the Flask app instance and db from main.py
+from main import app, db
+
 app.config['ADMIN_USERNAME'] = os.environ.get("ADMIN_USERNAME", "admin")
 app.config['ADMIN_PASSWORD'] = os.environ.get("ADMIN_PASSWORD", "admin123")
 
@@ -22,6 +23,9 @@ mikrotik_api = MikroTikAPI(
     username=os.environ.get("MIKROTIK_USERNAME", "admin"),
     password=os.environ.get("MIKROTIK_PASSWORD", "")
 )
+
+# Import models
+from models import User, LoginSession, BlockedDevice, GoogleCredential
 
 def admin_required(f):
     @wraps(f)
@@ -66,6 +70,14 @@ def login():
         flash('Mobile number must include country code (e.g., +911234567890)', 'danger')
         return redirect(url_for('index'))
     
+    # Check for blocked devices
+    mac_address = session.get('mac')
+    if mac_address:
+        blocked_device = BlockedDevice.query.filter_by(mac_address=mac_address, is_active=True).first()
+        if blocked_device:
+            flash('This device has been blocked by the administrator', 'danger')
+            return redirect(url_for('index'))
+    
     # Validate against Google Sheets
     try:
         is_valid = verify_credentials(mobile_number, room_number)
@@ -76,6 +88,29 @@ def login():
             session['user_room'] = room_number
             session['authenticated'] = True
             session['login_time'] = time.time()
+            
+            # Check if user exists in database, if not create new user
+            user = User.query.filter_by(mobile_number=mobile_number).first()
+            if not user:
+                user = User(mobile_number=mobile_number, room_number=room_number)
+                db.session.add(user)
+                db.session.commit()
+            elif user.room_number != room_number:
+                # Update room number if changed
+                user.room_number = room_number
+                db.session.commit()
+            
+            # Create login session
+            login_session = LoginSession(
+                user_id=user.id,
+                ip_address=session.get('ip'),
+                mac_address=session.get('mac')
+            )
+            db.session.add(login_session)
+            db.session.commit()
+            
+            # Store login session ID in user session
+            session['login_session_id'] = login_session.id
             
             # Connect user to MikroTik
             try:
@@ -114,11 +149,30 @@ def logout():
         except Exception as e:
             logger.error(f"Error during logout: {str(e)}")
     
+    # Update login session record if it exists
+    if 'login_session_id' in session:
+        try:
+            login_session = LoginSession.query.get(session['login_session_id'])
+            if login_session:
+                login_session.logout_time = datetime.utcnow()
+                
+                # Try to update bytes in/out from MikroTik if available
+                try:
+                    # This would need to be implemented based on your specific MikroTik API
+                    pass
+                except Exception as e:
+                    logger.error(f"Error updating session data: {str(e)}")
+                
+                db.session.commit()
+        except Exception as e:
+            logger.error(f"Error updating login session: {str(e)}")
+    
     # Clear session
     session.pop('user_mobile', None)
     session.pop('user_room', None)
     session.pop('authenticated', None)
     session.pop('login_time', None)
+    session.pop('login_session_id', None)
     
     flash('You have been logged out', 'info')
     return redirect(url_for('index'))
@@ -191,7 +245,53 @@ def api_disconnect_user():
         return jsonify({"success": False, "error": "No user specified"})
     
     try:
+        # Get user details before disconnection to add to block list
+        user_details = None
+        mac_address = None
+        mobile_number = None
+        
+        try:
+            # Get active users from MikroTik
+            active_users = mikrotik_api.get_active_users()
+            for user in active_users:
+                if user.get('id') == user_id:
+                    user_details = user
+                    mac_address = user.get('mac_address')
+                    mobile_number = user.get('user')
+                    break
+        except Exception as e:
+            logger.error(f"Error getting user details: {str(e)}")
+        
+        # Disconnect the user
         success = mikrotik_api.remove_user(user_id)
+        
+        if success and mac_address:
+            # Add to database block list
+            try:
+                # Check if already in block list
+                existing_block = BlockedDevice.query.filter_by(mac_address=mac_address).first()
+                
+                if existing_block:
+                    # Update existing block
+                    existing_block.is_active = True
+                    existing_block.blocked_at = datetime.utcnow()
+                    existing_block.blocked_by = session.get('admin_username', 'admin')
+                    existing_block.reason = "Disconnected by administrator"
+                else:
+                    # Create new block
+                    blocked_device = BlockedDevice(
+                        mac_address=mac_address,
+                        mobile_number=mobile_number,
+                        reason="Disconnected by administrator",
+                        blocked_by=session.get('admin_username', 'admin')
+                    )
+                    db.session.add(blocked_device)
+                
+                db.session.commit()
+                logger.info(f"Added MAC {mac_address} to database block list")
+            except Exception as e:
+                logger.error(f"Error adding to database block list: {str(e)}")
+        
         if success:
             return jsonify({"success": True})
         else:
