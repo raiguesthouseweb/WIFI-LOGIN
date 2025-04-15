@@ -78,7 +78,9 @@ def login():
     
     # Validate against Google Sheets
     try:
+        logger.info(f"Starting Google Sheets validation for Mobile: {mobile_number}, Room: {room_number}")
         is_valid = verify_credentials(mobile_number, room_number)
+        logger.info(f"Google Sheets validation result: {'Success' if is_valid else 'Failed'}")
         
         if is_valid:
             # Store user info in session
@@ -93,10 +95,12 @@ def login():
                 user = User(mobile_number=mobile_number, room_number=room_number)
                 db.session.add(user)
                 db.session.commit()
+                logger.info(f"Created new user in database: {mobile_number}")
             elif user.room_number != room_number:
                 # Update room number if changed
                 user.room_number = room_number
                 db.session.commit()
+                logger.info(f"Updated room number for user: {mobile_number}")
             
             # Create login session
             login_session = LoginSession(
@@ -106,6 +110,7 @@ def login():
             )
             db.session.add(login_session)
             db.session.commit()
+            logger.info(f"Created login session ID: {login_session.id}")
             
             # Store login session ID in user session
             session['login_session_id'] = login_session.id
@@ -113,26 +118,28 @@ def login():
             # Connect user to MikroTik
             try:
                 # Use mobile number as username for MikroTik
+                logger.info(f"Connecting to MikroTik for user: {mobile_number}")
                 success = mikrotik_api.add_user(mobile_number, room_number)
                 if success:
-                    flash('Login successful!', 'success')
+                    flash('✅ Login successful! Verified against Google Sheet.', 'success')
                     
                     # If we have MikroTik login information, redirect to their login page
                     if 'link-login' in session and session['link-login']:
                         mikrotik_login_url = f"{session['link-login']}?username={mobile_number}&password={room_number}"
+                        logger.info(f"Redirecting to MikroTik login: {session['link-login']}")
                         return redirect(mikrotik_login_url)
                     
                     return render_template('login.html', success=True)
                 else:
-                    flash('Failed to connect to WiFi network', 'danger')
+                    flash('⚠️ Credentials verified in Google Sheet, but failed to connect to WiFi router', 'warning')
             except Exception as e:
                 logger.error(f"MikroTik error: {str(e)}")
-                flash('Error connecting to WiFi network', 'danger')
+                flash('⚠️ Credentials verified in Google Sheet, but error connecting to WiFi router', 'warning')
         else:
-            flash('Invalid mobile number or room number. Please check both carefully.', 'danger')
+            flash('❌ Invalid credentials. Mobile number and room number combination not found in Google Sheet.', 'danger')
     except Exception as e:
         logger.error(f"Validation error: {str(e)}")
-        flash('Error validating credentials', 'danger')
+        flash('⚠️ Error during Google Sheets validation. Please contact administrator.', 'danger')
     
     return redirect(url_for('index'))
 
