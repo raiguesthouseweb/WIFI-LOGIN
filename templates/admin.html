@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block head %}
+<style>
+    .stats-card {
+        transition: transform 0.2s;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .user-table {
+        overflow-x: auto;
+    }
+    
+    #refreshBtn {
+        position: relative;
+    }
+    
+    .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+        border-width: 0.2em;
+    }
+    
+    .animated-bg {
+        background: linear-gradient(270deg, var(--bs-dark), var(--bs-secondary));
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+    }
+    
+    @keyframes gradient {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-8">
+        <h2><i class="fas fa-tachometer-alt me-2"></i>Admin Dashboard</h2>
+        <p class="text-muted">Monitor and manage WiFi users</p>
+    </div>
+    <div class="col-md-4 text-md-end">
+        <div class="btn-group" role="group">
+            <button id="refreshBtn" class="btn btn-outline-primary">
+                <i class="fas fa-sync-alt me-1"></i> Refresh
+                <span id="refreshSpinner" class="spinner-border spinner-border-sm ms-1 d-none" role="status"></span>
+            </button>
+            <button id="refreshSheetBtn" class="btn btn-outline-info">
+                <i class="fas fa-file-spreadsheet me-1"></i> Refresh Sheet
+            </button>
+            <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-danger">
+                <i class="fas fa-sign-out-alt me-1"></i> Logout
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card stats-card h-100 border-primary">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-users me-2 text-primary"></i>Connected Users
+                </h5>
+                <h2 class="display-4" id="connectedUsersCount">{{ active_users|length }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stats-card h-100 border-success">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-arrow-down me-2 text-success"></i>Total Download
+                </h5>
+                <h2 class="display-4" id="totalDownload">0 MB</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card stats-card h-100 border-danger">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-arrow-up me-2 text-danger"></i>Total Upload
+                </h5>
+                <h2 class="display-4" id="totalUpload">0 MB</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Table -->
+<div class="card mb-4">
+    <div class="card-header animated-bg text-white">
+        <h4 class="mb-0"><i class="fas fa-table me-2"></i>Connected Users</h4>
+    </div>
+    <div class="card-body">
+        <div class="user-table">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>User (Mobile)</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
+                        <th>Uptime</th>
+                        <th>Data Usage</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    {% if active_users %}
+                        {% for user in active_users %}
+                            <tr data-user-id="{{ user.id }}">
+                                <td>{{ user.user }}</td>
+                                <td>{{ user.address }}</td>
+                                <td>{{ user.mac_address }}</td>
+                                <td>{{ user.uptime }}</td>
+                                <td>
+                                    <i class="fas fa-arrow-down text-success me-1"></i>{{ (user.bytes_in|int / 1024 / 1024)|round(2) }} MB
+                                    <br>
+                                    <i class="fas fa-arrow-up text-danger me-1"></i>{{ (user.bytes_out|int / 1024 / 1024)|round(2) }} MB
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger disconnect-btn" data-user-id="{{ user.id }}">
+                                        <i class="fas fa-ban me-1"></i>Disconnect
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr id="noUsersRow">
+                            <td colspan="6" class="text-center py-4">
+                                <i class="fas fa-users-slash fa-2x mb-2 text-muted"></i>
+                                <p class="mb-0">No users currently connected</p>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Usage Chart -->
+<div class="card">
+    <div class="card-header animated-bg text-white">
+        <h4 class="mb-0"><i class="fas fa-chart-area me-2"></i>Network Usage</h4>
+    </div>
+    <div class="card-body">
+        <canvas id="usageChart" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Disconnect User Modal -->
+<div class="modal fade" id="disconnectModal" tabindex="-1" aria-labelledby="disconnectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="disconnectModalLabel">Disconnect User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to disconnect this user?</p>
+                <p><strong>User: </strong><span id="disconnectUserName"></span></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDisconnectBtn">
+                    <i class="fas fa-ban me-1"></i>Disconnect
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

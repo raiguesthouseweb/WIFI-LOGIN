@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Login{% endblock %}
+
+{% block head %}
+<style>
+    .admin-login-container {
+        max-width: 450px;
+        margin: 0 auto;
+        padding: 20px;
+        border-radius: 8px;
+    }
+    
+    .admin-logo {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    
+    .admin-icon {
+        font-size: 60px;
+        color: var(--bs-primary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card admin-login-container shadow-sm">
+            <div class="card-body">
+                <div class="admin-logo">
+                    <div class="admin-icon">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <h3 class="mt-2">Admin Login</h3>
+                </div>
+                
+                <div class="mb-4">
+                    <p class="text-center">Please enter your administrator credentials to access the dashboard.</p>
+                </div>
+                
+                <form action="{{ url_for('admin_login') }}" method="post">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-user"></i></span>
+                            <input type="text" class="form-control" id="username" name="username" required placeholder="Enter admin username">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="password" class="form-label">Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                            <input type="password" class="form-control" id="password" name="password" required placeholder="Enter admin password">
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-sign-in-alt me-2"></i>Login
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-4 text-center">
+                    <a href="{{ url_for('index') }}" class="text-decoration-none">
+                        <i class="fas fa-arrow-left me-1"></i> Back to User Login
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}WiFi Login Portal{% endblock %}
+
+{% block head %}
+<style>
+    .login-container {
+        max-width: 450px;
+        margin: 0 auto;
+        padding: 20px;
+        border-radius: 8px;
+    }
+    
+    .logo-container {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    
+    .logo-icon {
+        font-size: 60px;
+        color: var(--bs-primary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card login-container shadow-sm">
+            <div class="card-body">
+                <div class="logo-container">
+                    <div class="logo-icon">
+                        <i class="fas fa-wifi"></i>
+                    </div>
+                    <h3 class="mt-2">WiFi Login Portal</h3>
+                </div>
+                
+                {% if success %}
+                <div class="alert alert-success text-center">
+                    <h4><i class="fas fa-check-circle me-2"></i>Login Successful!</h4>
+                    <p>You are now connected to the WiFi network.</p>
+                    <p class="mb-0">You may close this window and enjoy browsing.</p>
+                </div>
+                {% else %}
+                <div class="mb-4">
+                    <p class="text-center">Please enter your mobile number and room number to access the WiFi.</p>
+                </div>
+                
+                <form id="loginForm" action="{{ url_for('login') }}" method="post">
+                    <div class="mb-3">
+                        <label for="mobile_number" class="form-label">Mobile Number</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-mobile-alt"></i></span>
+                            <input type="text" class="form-control" id="mobile_number" name="mobile_number" required placeholder="Enter your mobile number">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="room_number" class="form-label">Room Number</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-door-open"></i></span>
+                            <input type="text" class="form-control" id="room_number" name="room_number" required placeholder="Enter your room number">
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-sign-in-alt me-2"></i>Connect to WiFi
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+                
+                <div class="mt-4 text-center small">
+                    <p class="text-muted">If you need assistance, please contact reception.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+{% endblock %}
