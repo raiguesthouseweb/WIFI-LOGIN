@@ -13,15 +13,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Validation for room number input
+    // Validation for room number input - less restrictive to allow various formats
     const roomInput = document.getElementById('room_number');
     if (roomInput) {
         roomInput.addEventListener('input', function(e) {
             // Limit length
-            if (this.value.length > 10) {
-                this.value = this.value.slice(0, 10);
+            if (this.value.length > 15) {
+                this.value = this.value.slice(0, 15);
             }
+            
+            // Convert to uppercase for better user experience
+            // Don't replace spaces to allow formats like "R 0" or "1 Dorm"
+            this.value = this.value.toUpperCase();
         });
+    }
+    
+    // Helper function to format room number
+    function formatRoomNumber(roomNumber) {
+        // This function could be expanded if needed to help format the room number
+        // as the user types, making suggestions or auto-corrections
+        // For now, we'll just return the value as is
+        return roomNumber;
     }
     
     // Form submission
@@ -46,7 +58,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
             
-            // If validation passes, the form will submit normally
+            // Show a message to indicate the form is being submitted
+            const submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin me-2"></i>Connecting...';
+                submitBtn.disabled = true;
+            }
+            
+            // Form will submit normally
         });
+    }
+    
+    // Add helpful tooltip or placeholder text
+    if (roomInput) {
+        roomInput.setAttribute('placeholder', 'e.g., R0, F1, 1 Dorm');
+        roomInput.setAttribute('title', 'Enter your room number (R0, F1, 1 Dorm, etc.)');
     }
 });

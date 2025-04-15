@@ -2,9 +2,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize variables
     const refreshBtn = document.getElementById('refreshBtn');
     const refreshSheetBtn = document.getElementById('refreshSheetBtn');
+    const googleSetupBtn = document.getElementById('googleSetupBtn');
     const refreshSpinner = document.getElementById('refreshSpinner');
     const userTableBody = document.getElementById('userTableBody');
     const disconnectModal = new bootstrap.Modal(document.getElementById('disconnectModal'));
+    const googleSetupModal = new bootstrap.Modal(document.getElementById('googleSetupModal'));
     const disconnectUserName = document.getElementById('disconnectUserName');
     const confirmDisconnectBtn = document.getElementById('confirmDisconnectBtn');
     let currentUserId = null;
@@ -249,6 +251,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Event: Refresh Sheet button click
     if (refreshSheetBtn) {
         refreshSheetBtn.addEventListener('click', refreshSheetData);
+    }
+    
+    // Event: Google Setup button click
+    if (googleSetupBtn) {
+        googleSetupBtn.addEventListener('click', function() {
+            googleSetupModal.show();
+        });
     }
     
     // Event: Confirm disconnect button click

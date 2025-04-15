@@ -55,6 +55,9 @@
             <button id="refreshSheetBtn" class="btn btn-outline-info">
                 <i class="fas fa-file-spreadsheet me-1"></i> Refresh Sheet
             </button>
+            <button id="googleSetupBtn" class="btn btn-outline-warning">
+                <i class="fas fa-key me-1"></i> Google Setup
+            </button>
             <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-danger">
                 <i class="fas fa-sign-out-alt me-1"></i> Logout
             </a>
@@ -175,6 +178,73 @@
                 <button type="button" class="btn btn-danger" id="confirmDisconnectBtn">
                     <i class="fas fa-ban me-1"></i>Disconnect
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Google Authentication Setup Modal -->
+<div class="modal fade" id="googleSetupModal" tabindex="-1" aria-labelledby="googleSetupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="googleSetupModalLabel">
+                    <i class="fas fa-key me-2 text-warning"></i>Google Sheets Credentials Setup
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Setup Instructions:</strong> To enable Google Sheets validation, you need to set up Google API credentials.
+                </div>
+                
+                <h6 class="mt-3 mb-2"><i class="fas fa-list-ol me-2"></i>Follow these steps:</h6>
+                <ol class="list-group list-group-numbered mb-3">
+                    <li class="list-group-item">Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Google Cloud Console</a></li>
+                    <li class="list-group-item">Create a new project or select an existing one</li>
+                    <li class="list-group-item">Enable the Google Sheets API for your project</li>
+                    <li class="list-group-item">Create a Service Account Key</li>
+                    <li class="list-group-item">Download the JSON credentials file</li>
+                    <li class="list-group-item">Upload the file to this application or set the GOOGLE_CREDENTIALS_JSON environment variable</li>
+                    <li class="list-group-item">Share your Google Sheet with the service account email from the credentials</li>
+                </ol>
+                
+                <h6 class="mt-4 mb-2"><i class="fas fa-cog me-2"></i>Environment Variables:</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Variable</th>
+                                <th>Description</th>
+                                <th>Current Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>GOOGLE_CREDENTIALS_FILE</code></td>
+                                <td>Path to credentials JSON file</td>
+                                <td><span class="badge bg-warning text-dark">Not set</span></td>
+                            </tr>
+                            <tr>
+                                <td><code>GOOGLE_CREDENTIALS_JSON</code></td>
+                                <td>JSON credentials as environment variable</td>
+                                <td><span class="badge bg-warning text-dark">Not set</span></td>
+                            </tr>
+                            <tr>
+                                <td><code>SPREADSHEET_ID</code></td>
+                                <td>Google Spreadsheet ID</td>
+                                <td><span class="badge bg-success">Set to 176lp2Z2usUXj7x3guMmTnMikoSqkXQrXw5jLfYguEq4</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="btn btn-primary">
+                    <i class="fas fa-external-link-alt me-1"></i>Go to Google Cloud Console
+                </a>
             </div>
         </div>
     </div>
