@@ -446,9 +446,30 @@ def api_users():
     try:
         active_users = mikrotik_api.get_active_users()
         return jsonify({"success": True, "users": active_users})
+    except ConnectionError as e:
+        logger.error(f"MikroTik connection error: {str(e)}")
+        
+        # Show formatted error from MikroTik module
+        if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+            error_info = e.args[0]
+            return ErrorHandler.api_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout",
+                additional_info=error_info.get('message', "Unable to connect to the router.")
+            )
+        else:
+            # Generic connection error
+            return ErrorHandler.api_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout"
+            )
     except Exception as e:
         logger.error(f"API error: {str(e)}")
-        return jsonify({"success": False, "error": str(e)})
+        return ErrorHandler.api_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            additional_info=str(e)
+        )
 
 @app.route('/api/disconnect_user', methods=['POST'])
 @admin_required
@@ -459,7 +480,12 @@ def api_disconnect_user():
     user_id = request.form.get('user_id')
     
     if not user_id:
-        return jsonify({"success": False, "error": "No user specified"})
+        return ErrorHandler.api_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            "No user specified. Please provide a valid user ID.",
+            status_code=400
+        )
     
     try:
         # Get user details before disconnection to add to block list
@@ -476,8 +502,26 @@ def api_disconnect_user():
                     mac_address = user.get('mac_address')
                     mobile_number = user.get('user')
                     break
+        except ConnectionError as e:
+            logger.error(f"MikroTik connection error: {str(e)}")
+            
+            # Show formatted error from MikroTik module
+            if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+                error_info = e.args[0]
+                return ErrorHandler.api_error(
+                    ErrorCategory.MIKROTIK,
+                    "connection_timeout",
+                    additional_info=error_info.get('message', "Unable to connect to the router.")
+                )
+            else:
+                # Generic connection error
+                return ErrorHandler.api_error(
+                    ErrorCategory.MIKROTIK,
+                    "connection_timeout"
+                )
         except Exception as e:
             logger.error(f"Error getting user details: {str(e)}")
+            # Continue execution - we'll try to disconnect the user even without details
         
         # Disconnect the user
         success = mikrotik_api.remove_user(user_id)
@@ -508,14 +552,44 @@ def api_disconnect_user():
                 logger.info(f"Added MAC {mac_address} to database block list")
             except Exception as e:
                 logger.error(f"Error adding to database block list: {str(e)}")
+                # Don't return error - the disconnect worked but blocking failed
         
         if success:
-            return jsonify({"success": True})
+            return jsonify({
+                "success": True,
+                "message": f"User {mobile_number or user_id} has been disconnected and their device has been blocked."
+            })
         else:
-            return jsonify({"success": False, "error": "Failed to disconnect user"})
+            return ErrorHandler.api_error(
+                ErrorCategory.MIKROTIK,
+                "api_error",
+                "Failed to disconnect user from router. They may have already disconnected."
+            )
+    except ConnectionError as e:
+        logger.error(f"MikroTik connection error during disconnect: {str(e)}")
+        
+        # Show formatted error from MikroTik module
+        if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+            error_info = e.args[0]
+            return ErrorHandler.api_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout",
+                additional_info=error_info.get('message', "Unable to connect to the router to disconnect the user.")
+            )
+        else:
+            # Generic connection error
+            return ErrorHandler.api_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout",
+                "Unable to connect to router to disconnect user."
+            )
     except Exception as e:
         logger.error(f"Error disconnecting user: {str(e)}")
-        return jsonify({"success": False, "error": str(e)})
+        return ErrorHandler.api_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            f"An unexpected error occurred: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Please check logs for details.'}"
+        )
 
 @app.route('/api/refresh_sheet')
 @admin_required
@@ -588,6 +662,7 @@ def admin_manage_users():
 
 @app.route('/admin/add-user', methods=['POST'])
 @admin_required
+@handle_errors
 def admin_add_user():
     """
     Add a new special user (staff, family, friend)
@@ -597,30 +672,57 @@ def admin_add_user():
     user_type = request.form.get('user_type', 'guest')
     
     if not mobile_number or not password:
-        flash('Mobile number and password are required', 'danger')
+        ErrorHandler.flash_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            "Mobile number and password are required fields."
+        )
+        return redirect(url_for('admin_manage_users'))
+    
+    # Validate mobile number format
+    if not mobile_number.isdigit():
+        ErrorHandler.flash_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            "Mobile number should contain only digits without country code."
+        )
         return redirect(url_for('admin_manage_users'))
     
     # Check if user already exists
-    existing_user = User.query.filter_by(mobile_number=mobile_number).first()
-    if existing_user:
-        flash(f'User with mobile number {mobile_number} already exists', 'danger')
-        return redirect(url_for('admin_manage_users'))
+    try:
+        existing_user = User.query.filter_by(mobile_number=mobile_number).first()
+        if existing_user:
+            ErrorHandler.flash_error(
+                ErrorCategory.GENERAL,
+                "unknown_error",
+                f"User with mobile number {mobile_number} already exists."
+            )
+            return redirect(url_for('admin_manage_users'))
+        
+        # Create new user
+        user = User(
+            mobile_number=mobile_number,
+            password=password,
+            user_type=user_type,
+            is_active=True
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        flash(f'User {mobile_number} added successfully. Type: {user_type}', 'success')
+    except Exception as e:
+        logger.error(f"Error adding user: {str(e)}")
+        ErrorHandler.flash_error(
+            ErrorCategory.DATABASE,
+            "query_error",
+            f"Error adding user: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Database error'}"
+        )
     
-    # Create new user
-    user = User(
-        mobile_number=mobile_number,
-        password=password,
-        user_type=user_type,
-        is_active=True
-    )
-    db.session.add(user)
-    db.session.commit()
-    
-    flash(f'User {mobile_number} added successfully', 'success')
     return redirect(url_for('admin_manage_users'))
 
 @app.route('/admin/edit-user', methods=['POST'])
 @admin_required
+@handle_errors
 def admin_edit_user():
     """
     Edit an existing user
@@ -632,36 +734,62 @@ def admin_edit_user():
     is_active = 'is_active' in request.form
     
     if not user_id or not mobile_number or not password:
-        flash('All fields are required', 'danger')
+        ErrorHandler.flash_error(
+            ErrorCategory.GENERAL,
+            "unknown_error",
+            "All fields are required when editing a user."
+        )
         return redirect(url_for('admin_manage_users'))
     
-    user = User.query.get_or_404(user_id)
-    
-    # Check if mobile number is changed and already exists
-    if user.mobile_number != mobile_number:
-        existing_user = User.query.filter_by(mobile_number=mobile_number).first()
-        if existing_user and existing_user.id != int(user_id):
-            flash(f'Mobile number {mobile_number} is already in use', 'danger')
-            return redirect(url_for('admin_manage_users'))
-    
-    # Update user details
-    user.mobile_number = mobile_number
-    
-    # If it's a special user, update password
-    if user_type != 'guest':
-        user.password = password
-        user.room_number = None  # Clear room number for non-guests
-    else:
-        user.password = None
-        user.room_number = password  # For guests, password is room number
+    try:
+        user = User.query.get_or_404(user_id)
         
-    user.user_type = user_type
-    user.is_active = is_active
-    user.updated_at = datetime.utcnow()
+        # Validate mobile number format
+        if not mobile_number.isdigit():
+            ErrorHandler.flash_error(
+                ErrorCategory.GENERAL,
+                "unknown_error",
+                "Mobile number should contain only digits without country code."
+            )
+            return redirect(url_for('admin_manage_users'))
+        
+        # Check if mobile number is changed and already exists
+        if user.mobile_number != mobile_number:
+            existing_user = User.query.filter_by(mobile_number=mobile_number).first()
+            if existing_user and existing_user.id != int(user_id):
+                ErrorHandler.flash_error(
+                    ErrorCategory.GENERAL,
+                    "unknown_error",
+                    f"Mobile number {mobile_number} is already in use by another user."
+                )
+                return redirect(url_for('admin_manage_users'))
+        
+        # Update user details
+        user.mobile_number = mobile_number
+        
+        # If it's a special user, update password
+        if user_type != 'guest':
+            user.password = password
+            user.room_number = None  # Clear room number for non-guests
+        else:
+            user.password = None
+            user.room_number = password  # For guests, password is room number
+            
+        user.user_type = user_type
+        user.is_active = is_active
+        user.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        flash(f'User {mobile_number} ({user_type}) updated successfully', 'success')
+    except Exception as e:
+        logger.error(f"Error updating user: {str(e)}")
+        ErrorHandler.flash_error(
+            ErrorCategory.DATABASE,
+            "query_error",
+            f"Error updating user: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Database error'}"
+        )
     
-    db.session.commit()
-    
-    flash(f'User {mobile_number} updated successfully', 'success')
     return redirect(url_for('admin_manage_users'))
 
 @app.route('/admin/block-user/<int:user_id>', methods=['POST'])
