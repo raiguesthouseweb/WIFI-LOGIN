@@ -1,6 +1,7 @@
 import logging
 import routeros_api
 import time
+import os
 from config import MIKROTIK_HOST, MIKROTIK_PORT, MIKROTIK_USERNAME, MIKROTIK_PASSWORD
 
 # Set up logging
@@ -60,6 +61,11 @@ class MikroTikAPI:
         """
         Get a list of active users from the router's hotspot
         """
+        # Check if we're in development mode - if so, return empty list without contacting router
+        if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true':
+            logger.info("Development mode: Returning empty active users list without contacting router")
+            return []
+            
         try:
             api = self.connect()
             hotspot_active = api.get_resource('/ip/hotspot/active')
@@ -81,7 +87,8 @@ class MikroTikAPI:
             return users
         except Exception as e:
             logger.error(f"Error getting active users: {str(e)}")
-            raise e
+            # Return empty list instead of raising exception to avoid breaking the admin page
+            return []
     
     def add_user(self, username, password):
         """
@@ -92,6 +99,11 @@ class MikroTikAPI:
         
         This is here as a placeholder for potential additional functionality.
         """
+        # Check if we're in development mode - if so, return success without contacting router
+        if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true':
+            logger.info(f"Development mode: Simulating successful user addition for: {username}")
+            return True
+            
         try:
             api = self.connect()
             
@@ -120,6 +132,11 @@ class MikroTikAPI:
         Args:
             user_id: This can be either the ID of the active connection or the username
         """
+        # Check if we're in development mode - if so, return success without contacting router
+        if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true':
+            logger.info(f"Development mode: Simulating successful user removal for: {user_id}")
+            return True
+            
         try:
             api = self.connect()
             hotspot_active = api.get_resource('/ip/hotspot/active')
@@ -181,14 +198,19 @@ class MikroTikAPI:
             logger.warning("No MAC address provided to block")
             return False
             
+        # Check if we're in development mode - if so, return success without contacting router
+        if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true':
+            logger.info(f"Development mode: Simulating MAC address blocking for: {mac_address} (user: {username})")
+            return True
+            
+        # Check the MAC address format
+        if not self._is_valid_mac(mac_address):
+            logger.warning(f"Invalid MAC address format: {mac_address}")
+            return False
+                
         try:
             api = self.connect()
             
-            # Check the MAC address format
-            if not self._is_valid_mac(mac_address):
-                logger.warning(f"Invalid MAC address format: {mac_address}")
-                return False
-                
             # Add to MikroTik address list (for firewall)
             ip_firewall_addr_list = api.get_resource('/ip/firewall/address-list')
             
