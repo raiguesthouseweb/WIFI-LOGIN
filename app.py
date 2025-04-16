@@ -56,6 +56,7 @@ def index():
     return render_template('login.html', error=session.get('error', None))
 
 @app.route('/login', methods=['POST'])
+@handle_errors
 def login():
     """
     Process login form submission
@@ -65,7 +66,11 @@ def login():
     
     # Validate input
     if not mobile_number or not room_number:
-        flash('Please enter both mobile number and password', 'danger')
+        ErrorHandler.flash_error(
+            ErrorCategory.AUTHENTICATION, 
+            "invalid_credentials",
+            "Please enter both mobile number and room number/password."
+        )
         return redirect(url_for('index'))
     
     # Check for blocked devices
@@ -73,7 +78,11 @@ def login():
     if mac_address:
         blocked_device = BlockedDevice.query.filter_by(mac_address=mac_address, is_active=True).first()
         if blocked_device:
-            flash('This device has been blocked by the administrator', 'danger')
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "account_blocked",
+                f"This device was blocked on {blocked_device.blocked_at.strftime('%Y-%m-%d')}."
+            )
             return redirect(url_for('index'))
     
     # Check if user exists in database
@@ -85,7 +94,11 @@ def login():
         
         # Check if user is active
         if not user.is_active:
-            flash('This account has been blocked. Please contact administrator.', 'danger')
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "account_blocked",
+                "Your account has been deactivated."
+            )
             return redirect(url_for('index'))
         
         # Validate password
@@ -99,7 +112,11 @@ def login():
             
             return process_successful_login(user, room_number)
         else:
-            flash('Invalid credentials', 'danger')
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "invalid_credentials",
+                "The password you entered is incorrect."
+            )
             return redirect(url_for('index'))
     
     # For regular guests, validate against Google Sheets
@@ -136,13 +153,31 @@ def login():
             
             return process_successful_login(user, room_number)
         else:
-            flash('✅ Login temporarily allowed while we validate your credentials.', 'success')
+            # Credentials not found in Google Sheets
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "invalid_credentials",
+                "The mobile number and room number combination was not found."
+            )
+            return redirect(url_for('index'))
+    except ConnectionError as e:
+        # This is likely from Google Sheets API connection issue
+        logger.error(f"Google Sheets connection error: {str(e)}")
+        ErrorHandler.flash_error(
+            ErrorCategory.GOOGLE_SHEETS, 
+            "authentication_failed"
+        )
     except Exception as e:
         logger.error(f"Validation error: {str(e)}")
-        flash('⚠️ Error during Google Sheets validation. Please contact administrator.', 'danger')
+        ErrorHandler.flash_error(
+            ErrorCategory.GOOGLE_SHEETS, 
+            "api_error",
+            f"Error details: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Please contact administrator.'}"
+        )
     
     return redirect(url_for('index'))
 
+@handle_errors
 def process_successful_login(user, password):
     """
     Process successful login for both guest and special users
@@ -183,10 +218,36 @@ def process_successful_login(user, password):
             
             return render_template('login.html', success=True)
         else:
-            flash('⚠️ Authentication successful, but failed to connect to WiFi router', 'warning')
+            # Failed to connect to router but authentication was successful
+            ErrorHandler.flash_error(
+                ErrorCategory.MIKROTIK, 
+                "connection_timeout", 
+                "Your credentials were verified, but we couldn't connect to the WiFi router."
+            )
+    except ConnectionError as e:
+        logger.error(f"MikroTik connection error: {str(e)}")
+        
+        # Show formatted error from MikroTik module
+        if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+            error_info = e.args[0]
+            ErrorHandler.flash_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout",  # Use a default error type
+                error_info.get('message', "Error connecting to the WiFi router.")
+            )
+        else:
+            # Generic connection error
+            ErrorHandler.flash_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout"
+            )
     except Exception as e:
         logger.error(f"MikroTik error: {str(e)}")
-        flash('⚠️ Authentication successful, but error connecting to WiFi router', 'warning')
+        ErrorHandler.flash_error(
+            ErrorCategory.MIKROTIK,
+            "api_error",
+            f"Authentication successful, but encountered error: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Contact administrator for help.'}"
+        )
     
     return redirect(url_for('index'))
 
@@ -230,6 +291,7 @@ def logout():
     return redirect(url_for('index'))
 
 @app.route('/admin/login', methods=['GET', 'POST'])
+@handle_errors
 def admin_login():
     """
     Admin login page
@@ -238,12 +300,30 @@ def admin_login():
         username = request.form.get('username')
         password = request.form.get('password')
         
+        # Validate input
+        if not username or not password:
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "invalid_credentials",
+                "Please enter both username and password."
+            )
+            return render_template('admin_login.html')
+        
         if username == app.config['ADMIN_USERNAME'] and password == app.config['ADMIN_PASSWORD']:
             session['admin_logged_in'] = True
+            session['admin_username'] = username
             flash('Admin login successful', 'success')
             return redirect(url_for('admin_dashboard'))
         else:
-            flash('Invalid admin credentials', 'danger')
+            # Security best practice: don't specify if username or password is wrong
+            ErrorHandler.flash_error(
+                ErrorCategory.AUTHENTICATION, 
+                "invalid_credentials",
+                "The username or password is incorrect."
+            )
+            
+            # Log failed login attempts (for security monitoring)
+            logger.warning(f"Failed admin login attempt for username: {username} from IP: {request.remote_addr}")
     
     return render_template('admin_login.html')
 
@@ -258,6 +338,7 @@ def admin_logout():
 
 @app.route('/admin')
 @admin_required
+@handle_errors
 def admin_dashboard():
     """
     Admin dashboard
@@ -265,18 +346,55 @@ def admin_dashboard():
     # Get all active users from MikroTik
     try:
         active_users = mikrotik_api.get_active_users()
+    except ConnectionError as e:
+        logger.error(f"MikroTik connection error: {str(e)}")
+        active_users = []
+        
+        # Show formatted error from MikroTik module
+        if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+            error_info = e.args[0]
+            ErrorHandler.flash_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout", 
+                error_info.get('message', "Unable to get active users list from router.")
+            )
+        else:
+            # Generic connection error
+            ErrorHandler.flash_error(
+                ErrorCategory.MIKROTIK,
+                "connection_timeout",
+                "Unable to connect to the router. Will display cached data."
+            )
     except Exception as e:
         logger.error(f"Error getting active users: {str(e)}")
         active_users = []
-        flash('Error connecting to router', 'danger')
+        ErrorHandler.flash_error(
+            ErrorCategory.MIKROTIK,
+            "api_error",
+            "Unable to get active users. Using cached data."
+        )
     
     # Get statistics from database
-    stats = {
-        'total_users': User.query.count(),
-        'total_sessions': LoginSession.query.count(),
-        'blocked_devices': BlockedDevice.query.filter_by(is_active=True).count(),
-        'recent_logins': LoginSession.query.order_by(LoginSession.login_time.desc()).limit(5).all()
-    }
+    try:
+        stats = {
+            'total_users': User.query.count(),
+            'total_sessions': LoginSession.query.count(),
+            'blocked_devices': BlockedDevice.query.filter_by(is_active=True).count(),
+            'recent_logins': LoginSession.query.order_by(LoginSession.login_time.desc()).limit(5).all()
+        }
+    except Exception as e:
+        logger.error(f"Database error: {str(e)}")
+        stats = {
+            'total_users': 0,
+            'total_sessions': 0,
+            'blocked_devices': 0,
+            'recent_logins': []
+        }
+        ErrorHandler.flash_error(
+            ErrorCategory.DATABASE,
+            "query_error",
+            "Unable to retrieve dashboard statistics."
+        )
     
     return render_template('admin.html', active_users=active_users, stats=stats)
 
@@ -417,16 +535,46 @@ def api_refresh_sheet():
                 "message": f"Successfully refreshed Google Sheet with {len(sheet_data)} rows of data."
             })
         else:
+            error_details = ErrorHandler.get_error_details(
+                ErrorCategory.GOOGLE_SHEETS, 
+                "spreadsheet_not_found"
+            )
+            
             return jsonify({
                 "success": False, 
-                "message": "Google Sheet was refreshed but no data was returned. Please check your sheet permissions and format."
+                "message": "Google Sheet was refreshed but no data was returned.",
+                "title": error_details["title"],
+                "suggestions": error_details["suggestions"]
             })
-    except Exception as e:
-        logger.error(f"Error refreshing sheet: {str(e)}")
+    except ConnectionError as e:
+        logger.error(f"Google Sheets connection error: {str(e)}")
+        
+        error_details = ErrorHandler.get_error_details(
+            ErrorCategory.GOOGLE_SHEETS, 
+            "authentication_failed"
+        )
+        
         return jsonify({
             "success": False, 
             "error": str(e),
-            "message": "Failed to refresh Google Sheet data. Check credentials and permissions."
+            "message": error_details["message"],
+            "title": error_details["title"],
+            "suggestions": error_details["suggestions"]
+        })
+    except Exception as e:
+        logger.error(f"Error refreshing sheet: {str(e)}")
+        
+        error_details = ErrorHandler.get_error_details(
+            ErrorCategory.GOOGLE_SHEETS, 
+            "api_error"
+        )
+        
+        return jsonify({
+            "success": False, 
+            "error": str(e),
+            "message": error_details["message"],
+            "title": error_details["title"],
+            "suggestions": error_details["suggestions"]
         })
 
 @app.route('/admin/manage-users')
@@ -599,10 +747,96 @@ def admin_delete_user(user_id):
     flash(f'User {user.mobile_number} deleted successfully', 'success')
     return redirect(url_for('admin_manage_users'))
 
+@app.errorhandler(400)
+def bad_request(e):
+    """Handle 400 Bad Request errors with helpful suggestions"""
+    return ErrorHandler.error_page(
+        ErrorCategory.GENERAL, 
+        "unknown_error", 
+        "The request could not be processed due to invalid parameters.",
+        status_code=400
+    )
+
+@app.errorhandler(401)
+def unauthorized(e):
+    """Handle 401 Unauthorized errors with helpful suggestions"""
+    return ErrorHandler.error_page(
+        ErrorCategory.AUTHENTICATION, 
+        "invalid_credentials", 
+        "You need to be logged in to access this page.",
+        status_code=401
+    )
+
+@app.errorhandler(403)
+def forbidden(e):
+    """Handle 403 Forbidden errors with helpful suggestions"""
+    return ErrorHandler.error_page(
+        ErrorCategory.AUTHENTICATION, 
+        "account_blocked", 
+        "You don't have permission to access this resource.",
+        status_code=403
+    )
+
 @app.errorhandler(404)
 def page_not_found(e):
-    return render_template('error.html', error="Page not found"), 404
+    """Handle 404 Not Found errors with helpful suggestions"""
+    path = request.path
+    suggestions = [
+        "Check the URL for typos.",
+        "Use the navigation links instead of typing URLs manually.",
+        "Go back to the home page and try again."
+    ]
+    
+    # Add context-specific suggestions
+    if 'admin' in path:
+        suggestions.append("Make sure you're logged in as an administrator.")
+    
+    error_details = {
+        "title": "Page Not Found",
+        "message": f"The page '{path}' does not exist.",
+        "suggestions": suggestions,
+        "admin_note": f"Request path: {path}, Method: {request.method}",
+        "is_critical": False
+    }
+    
+    return render_template(
+        'error.html',
+        title=error_details["title"],
+        message=error_details["message"],
+        suggestions=error_details["suggestions"],
+        admin_note=error_details["admin_note"] if os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true" else "",
+        status_code=404
+    ), 404
 
 @app.errorhandler(500)
 def server_error(e):
-    return render_template('error.html', error="Internal server error"), 500
+    """Handle 500 Internal Server Error with helpful suggestions"""
+    return ErrorHandler.error_page(
+        ErrorCategory.GENERAL, 
+        "unknown_error", 
+        f"Error details: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else 'Contact administrator for more information.'}",
+        status_code=500
+    )
+
+@app.errorhandler(ConnectionError)
+def connection_error(e):
+    """Handle ConnectionError exceptions with helpful suggestions"""
+    # This will handle our custom MikroTik connection errors
+    if hasattr(e, 'args') and e.args and isinstance(e.args[0], dict) and 'title' in e.args[0]:
+        error_info = e.args[0]
+        return render_template(
+            'error_critical.html' if error_info.get('is_critical', False) else 'error.html',
+            title=error_info.get('title', 'Connection Error'),
+            message=error_info.get('message', 'Failed to connect to an external service.'),
+            suggestions=error_info.get('suggestions', ["Please try again later."]),
+            admin_note=error_info.get('admin_note', '') if os.environ.get("DEVELOPMENT_MODE", "false").lower() == "true" else "",
+            status_code=500
+        ), 500
+    else:
+        # Generic connection error
+        return ErrorHandler.error_page(
+            ErrorCategory.NETWORK, 
+            "client_timeout", 
+            f"Error details: {str(e) if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true' else ''}",
+            status_code=500
+        )
