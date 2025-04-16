@@ -2,7 +2,9 @@ import logging
 import routeros_api
 import time
 import os
+import socket
 from config import MIKROTIK_HOST, MIKROTIK_PORT, MIKROTIK_USERNAME, MIKROTIK_PASSWORD
+from error_handler import ErrorHandler, ErrorCategory
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -38,10 +40,45 @@ class MikroTikAPI:
                 )
                 api = self.connection.get_api()
                 return api
+            except socket.timeout:
+                logger.error("Failed to connect to MikroTik router: timed out")
+                self.connection = None
+                raise ConnectionError(
+                    ErrorHandler.format_error(
+                        ErrorCategory.MIKROTIK, 
+                        "connection_timeout",
+                        f"Host: {self.host}, Port: {self.port}"
+                    )
+                )
+            except routeros_api.exceptions.RouterOsApiConnectionError as e:
+                if "invalid user name or password" in str(e).lower():
+                    logger.error(f"Failed to authenticate with MikroTik router: {str(e)}")
+                    self.connection = None
+                    raise ConnectionError(
+                        ErrorHandler.format_error(
+                            ErrorCategory.MIKROTIK, 
+                            "authentication_failed"
+                        )
+                    )
+                else:
+                    logger.error(f"Failed to connect to MikroTik router: {str(e)}")
+                    self.connection = None
+                    raise ConnectionError(
+                        ErrorHandler.format_error(
+                            ErrorCategory.MIKROTIK, 
+                            "connection_timeout"
+                        )
+                    )
             except Exception as e:
                 logger.error(f"Failed to connect to MikroTik router: {str(e)}")
                 self.connection = None
-                raise e
+                raise ConnectionError(
+                    ErrorHandler.format_error(
+                        ErrorCategory.MIKROTIK, 
+                        "api_error",
+                        f"Error details: {str(e)}"
+                    )
+                )
         else:
             return self.connection.get_api()
     
@@ -64,6 +101,7 @@ class MikroTikAPI:
         # Check if we're in development mode - if so, return empty list without contacting router
         if os.environ.get('DEVELOPMENT_MODE', 'false').lower() == 'true':
             logger.info("Development mode: Returning empty active users list without contacting router")
+            # Return sample data in development mode
             return []
             
         try:
@@ -85,8 +123,25 @@ class MikroTikAPI:
                 })
             
             return users
-        except Exception as e:
+        except socket.timeout:
+            error_info = ErrorHandler.format_error(
+                ErrorCategory.MIKROTIK, 
+                "connection_timeout"
+            )
+            logger.error(f"Error getting active users: {error_info['title']} - {error_info['message']}")
+            # Return empty list instead of raising exception to avoid breaking the admin page
+            return []
+        except ConnectionError as e:
+            # This is likely from our own error handler in connect()
             logger.error(f"Error getting active users: {str(e)}")
+            return []
+        except Exception as e:
+            error_info = ErrorHandler.format_error(
+                ErrorCategory.MIKROTIK, 
+                "api_error",
+                f"Error details: {str(e)}"
+            )
+            logger.error(f"Error getting active users: {error_info['title']} - {error_info['message']}")
             # Return empty list instead of raising exception to avoid breaking the admin page
             return []
     

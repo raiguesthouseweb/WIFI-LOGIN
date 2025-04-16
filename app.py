@@ -7,6 +7,9 @@ from mikrotik import MikroTikAPI
 from functools import wraps
 import time
 
+# Import our error handler
+from error_handler import ErrorHandler, ErrorCategory, handle_errors
+
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
