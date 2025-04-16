@@ -1,0 +1,5 @@
+-- Add new columns to users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type VARCHAR(20) DEFAULT 'guest';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
+ALTER TABLE users ALTER COLUMN room_number DROP NOT NULL;

@@ -6,16 +6,19 @@ class User(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     mobile_number = db.Column(db.String(20), unique=True, nullable=False)
-    room_number = db.Column(db.String(20), nullable=False)
+    room_number = db.Column(db.String(20), nullable=True)  # Can be null for non-guest users
+    password = db.Column(db.String(100), nullable=True)    # For staff, family, and friends
+    user_type = db.Column(db.String(20), default='guest')  # guest, staff, family, friend
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
+    last_login = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     login_sessions = db.relationship('LoginSession', backref='user', lazy=True)
     
     def __repr__(self):
-        return f'<User {self.mobile_number}>'
+        return f'<User {self.mobile_number} ({self.user_type})>'
 
 class LoginSession(db.Model):
     __tablename__ = 'login_sessions'

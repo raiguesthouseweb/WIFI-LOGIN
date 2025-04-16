@@ -58,15 +58,12 @@ def login():
     Process login form submission
     """
     mobile_number = request.form.get('mobile_number')
-    room_number = request.form.get('room_number')
+    room_number = request.form.get('room_number')  # For guests, this is their room number; for others, it's their password
     
     # Validate input
     if not mobile_number or not room_number:
-        flash('Please enter both mobile number and room number', 'danger')
+        flash('Please enter both mobile number and password', 'danger')
         return redirect(url_for('index'))
-    
-    # No country code validation needed
-    # Mobile number validation is handled by Google Sheets
     
     # Check for blocked devices
     mac_address = session.get('mac')
@@ -76,7 +73,33 @@ def login():
             flash('This device has been blocked by the administrator', 'danger')
             return redirect(url_for('index'))
     
-    # Validate against Google Sheets
+    # Check if user exists in database
+    user = User.query.filter_by(mobile_number=mobile_number).first()
+    
+    # Handle special users (staff, family, friends) with custom passwords
+    if user and user.user_type != 'guest' and user.password:
+        logger.info(f"Special user login attempt: {user.user_type}")
+        
+        # Check if user is active
+        if not user.is_active:
+            flash('This account has been blocked. Please contact administrator.', 'danger')
+            return redirect(url_for('index'))
+        
+        # Validate password
+        if user.password == room_number:
+            # Authentication successful for special user
+            logger.info(f"Special user authenticated: {user.mobile_number} ({user.user_type})")
+            
+            # Update last login time
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            
+            return process_successful_login(user, room_number)
+        else:
+            flash('Invalid credentials', 'danger')
+            return redirect(url_for('index'))
+    
+    # For regular guests, validate against Google Sheets
     try:
         logger.info(f"Starting Google Sheets validation for Mobile: {mobile_number}, Room: {room_number}")
         is_valid = verify_credentials(mobile_number, room_number)
@@ -88,63 +111,79 @@ def login():
             is_valid = True
         
         if is_valid:
-            # Store user info in session
-            session['user_mobile'] = mobile_number
-            session['user_room'] = room_number
-            session['authenticated'] = True
-            session['login_time'] = time.time()
-            
-            # Check if user exists in database, if not create new user
-            user = User.query.filter_by(mobile_number=mobile_number).first()
+            # Check if user exists, if not create new user
             if not user:
-                user = User(mobile_number=mobile_number, room_number=room_number)
+                user = User(
+                    mobile_number=mobile_number, 
+                    room_number=room_number,
+                    user_type='guest'
+                )
                 db.session.add(user)
                 db.session.commit()
-                logger.info(f"Created new user in database: {mobile_number}")
+                logger.info(f"Created new guest user in database: {mobile_number}")
             elif user.room_number != room_number:
                 # Update room number if changed
                 user.room_number = room_number
                 db.session.commit()
                 logger.info(f"Updated room number for user: {mobile_number}")
             
-            # Create login session
-            login_session = LoginSession(
-                user_id=user.id,
-                ip_address=session.get('ip'),
-                mac_address=session.get('mac')
-            )
-            db.session.add(login_session)
+            # Update last login time
+            user.last_login = datetime.utcnow()
             db.session.commit()
-            logger.info(f"Created login session ID: {login_session.id}")
             
-            # Store login session ID in user session
-            session['login_session_id'] = login_session.id
-            
-            # Connect user to MikroTik
-            try:
-                # Use mobile number as username for MikroTik
-                logger.info(f"Connecting to MikroTik for user: {mobile_number}")
-                success = mikrotik_api.add_user(mobile_number, room_number)
-                if success:
-                    flash('✅ Login successful! Verified against Google Sheet.', 'success')
-                    
-                    # If we have MikroTik login information, redirect to their login page
-                    if 'link-login' in session and session['link-login']:
-                        mikrotik_login_url = f"{session['link-login']}?username={mobile_number}&password={room_number}"
-                        logger.info(f"Redirecting to MikroTik login: {session['link-login']}")
-                        return redirect(mikrotik_login_url)
-                    
-                    return render_template('login.html', success=True)
-                else:
-                    flash('⚠️ Credentials verified in Google Sheet, but failed to connect to WiFi router', 'warning')
-            except Exception as e:
-                logger.error(f"MikroTik error: {str(e)}")
-                flash('⚠️ Credentials verified in Google Sheet, but error connecting to WiFi router', 'warning')
+            return process_successful_login(user, room_number)
         else:
             flash('✅ Login temporarily allowed while we validate your credentials.', 'success')
     except Exception as e:
         logger.error(f"Validation error: {str(e)}")
         flash('⚠️ Error during Google Sheets validation. Please contact administrator.', 'danger')
+    
+    return redirect(url_for('index'))
+
+def process_successful_login(user, password):
+    """
+    Process successful login for both guest and special users
+    """
+    # Store user info in session
+    session['user_mobile'] = user.mobile_number
+    session['user_room'] = user.room_number if user.room_number else password
+    session['authenticated'] = True
+    session['login_time'] = time.time()
+    session['user_type'] = user.user_type
+    
+    # Create login session
+    login_session = LoginSession(
+        user_id=user.id,
+        ip_address=session.get('ip'),
+        mac_address=session.get('mac')
+    )
+    db.session.add(login_session)
+    db.session.commit()
+    logger.info(f"Created login session ID: {login_session.id}")
+    
+    # Store login session ID in user session
+    session['login_session_id'] = login_session.id
+    
+    # Connect user to MikroTik
+    try:
+        # Use mobile number as username for MikroTik
+        logger.info(f"Connecting to MikroTik for user: {user.mobile_number}")
+        success = mikrotik_api.add_user(user.mobile_number, password)
+        if success:
+            flash(f'✅ Login successful! Welcome, {user.user_type}.', 'success')
+            
+            # If we have MikroTik login information, redirect to their login page
+            if 'link-login' in session and session['link-login']:
+                mikrotik_login_url = f"{session['link-login']}?username={user.mobile_number}&password={password}"
+                logger.info(f"Redirecting to MikroTik login: {session['link-login']}")
+                return redirect(mikrotik_login_url)
+            
+            return render_template('login.html', success=True)
+        else:
+            flash('⚠️ Authentication successful, but failed to connect to WiFi router', 'warning')
+    except Exception as e:
+        logger.error(f"MikroTik error: {str(e)}")
+        flash('⚠️ Authentication successful, but error connecting to WiFi router', 'warning')
     
     return redirect(url_for('index'))
 
@@ -386,6 +425,176 @@ def api_refresh_sheet():
             "error": str(e),
             "message": "Failed to refresh Google Sheet data. Check credentials and permissions."
         })
+
+@app.route('/admin/manage-users')
+@admin_required
+def admin_manage_users():
+    """
+    Admin page for managing special users
+    """
+    users = User.query.order_by(User.created_at.desc()).all()
+    return render_template('admin_manage_users.html', users=users)
+
+@app.route('/admin/add-user', methods=['POST'])
+@admin_required
+def admin_add_user():
+    """
+    Add a new special user (staff, family, friend)
+    """
+    mobile_number = request.form.get('mobile_number')
+    password = request.form.get('password')
+    user_type = request.form.get('user_type', 'guest')
+    
+    if not mobile_number or not password:
+        flash('Mobile number and password are required', 'danger')
+        return redirect(url_for('admin_manage_users'))
+    
+    # Check if user already exists
+    existing_user = User.query.filter_by(mobile_number=mobile_number).first()
+    if existing_user:
+        flash(f'User with mobile number {mobile_number} already exists', 'danger')
+        return redirect(url_for('admin_manage_users'))
+    
+    # Create new user
+    user = User(
+        mobile_number=mobile_number,
+        password=password,
+        user_type=user_type,
+        is_active=True
+    )
+    db.session.add(user)
+    db.session.commit()
+    
+    flash(f'User {mobile_number} added successfully', 'success')
+    return redirect(url_for('admin_manage_users'))
+
+@app.route('/admin/edit-user', methods=['POST'])
+@admin_required
+def admin_edit_user():
+    """
+    Edit an existing user
+    """
+    user_id = request.form.get('user_id')
+    mobile_number = request.form.get('mobile_number')
+    password = request.form.get('password')
+    user_type = request.form.get('user_type')
+    is_active = 'is_active' in request.form
+    
+    if not user_id or not mobile_number or not password:
+        flash('All fields are required', 'danger')
+        return redirect(url_for('admin_manage_users'))
+    
+    user = User.query.get_or_404(user_id)
+    
+    # Check if mobile number is changed and already exists
+    if user.mobile_number != mobile_number:
+        existing_user = User.query.filter_by(mobile_number=mobile_number).first()
+        if existing_user and existing_user.id != int(user_id):
+            flash(f'Mobile number {mobile_number} is already in use', 'danger')
+            return redirect(url_for('admin_manage_users'))
+    
+    # Update user details
+    user.mobile_number = mobile_number
+    
+    # If it's a special user, update password
+    if user_type != 'guest':
+        user.password = password
+        user.room_number = None  # Clear room number for non-guests
+    else:
+        user.password = None
+        user.room_number = password  # For guests, password is room number
+        
+    user.user_type = user_type
+    user.is_active = is_active
+    user.updated_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    flash(f'User {mobile_number} updated successfully', 'success')
+    return redirect(url_for('admin_manage_users'))
+
+@app.route('/admin/block-user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_block_user(user_id):
+    """
+    Block a user
+    """
+    user = User.query.get_or_404(user_id)
+    user.is_active = False
+    db.session.commit()
+    
+    # If user is currently active in MikroTik, disconnect them
+    try:
+        active_users = mikrotik_api.get_active_users()
+        for active_user in active_users:
+            if active_user.get('user') == user.mobile_number:
+                mikrotik_api.remove_user(active_user.get('id'))
+                
+                # Add device to block list if MAC address is available
+                mac_address = active_user.get('mac_address')
+                if mac_address:
+                    # Check if already in block list
+                    existing_block = BlockedDevice.query.filter_by(mac_address=mac_address).first()
+                    if existing_block:
+                        existing_block.is_active = True
+                        existing_block.blocked_at = datetime.utcnow()
+                    else:
+                        blocked_device = BlockedDevice(
+                            mac_address=mac_address,
+                            mobile_number=user.mobile_number,
+                            reason="Blocked by administrator",
+                            blocked_by=session.get('admin_username', 'admin')
+                        )
+                        db.session.add(blocked_device)
+                    
+                    db.session.commit()
+                break
+    except Exception as e:
+        logger.error(f"Error checking/disconnecting user from MikroTik: {str(e)}")
+    
+    flash(f'User {user.mobile_number} blocked successfully', 'success')
+    return redirect(url_for('admin_manage_users'))
+
+@app.route('/admin/unblock-user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_unblock_user(user_id):
+    """
+    Unblock a user
+    """
+    user = User.query.get_or_404(user_id)
+    user.is_active = True
+    db.session.commit()
+    
+    flash(f'User {user.mobile_number} unblocked successfully', 'success')
+    return redirect(url_for('admin_manage_users'))
+
+@app.route('/admin/delete-user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_delete_user(user_id):
+    """
+    Delete a user completely
+    """
+    user = User.query.get_or_404(user_id)
+    
+    # First, try to disconnect from MikroTik if active
+    try:
+        active_users = mikrotik_api.get_active_users()
+        for active_user in active_users:
+            if active_user.get('user') == user.mobile_number:
+                mikrotik_api.remove_user(active_user.get('id'))
+                break
+    except Exception as e:
+        logger.error(f"Error disconnecting user from MikroTik: {str(e)}")
+    
+    # Delete related login sessions
+    LoginSession.query.filter_by(user_id=user.id).delete()
+    
+    # Delete the user
+    db.session.delete(user)
+    db.session.commit()
+    
+    flash(f'User {user.mobile_number} deleted successfully', 'success')
+    return redirect(url_for('admin_manage_users'))
 
 @app.errorhandler(404)
 def page_not_found(e):
