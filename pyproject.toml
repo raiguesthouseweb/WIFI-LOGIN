@@ -15,4 +15,6 @@ dependencies = [
     "routeros-api>=0.21.0",
     "sqlalchemy>=2.0.40",
     "flask-wtf>=1.2.2",
+    "markdown>=3.8",
+    "weasyprint>=65.1",
 ]
